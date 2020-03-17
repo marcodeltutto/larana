@@ -102,131 +102,148 @@ namespace pmtana{
       // End pulse if significantly high peak found (new pulse)
       if( (!fire || in_tail || in_post) && ((double)value > start_threshold) ) {
 
-	// If there's a pulse, end it
-	if(in_tail) {
-	  _pulse.t_end = i - 1;
+		// If there's a pulse, end it
+		if(in_tail) {
+	  		_pulse.t_end = i - 1;
 
-	  // Register if width is acceptable
-	  if( (_pulse.t_end - _pulse.t_start) >= _min_width )
-	    _pulse_v.push_back(_pulse);
+	  		// Register if width is acceptable
+	  		if( (_pulse.t_end - _pulse.t_start) >= _min_width )
+	    		_pulse_v.push_back(_pulse);
 
-	  _pulse.reset_param();
+	  		_pulse.reset_param();
 
-	  if(_verbose)
-	    std::cout << "\033[93mPulse End\033[00m: "
-		      << "baseline: " << mean_v[i] << " ... " << " ... adc above: " << value << " T=" << i << std::endl;
-	}
+	  		if(_verbose)
+	    		std::cout << "\033[93mPulse End\033[00m: new pulse starts during in_tail: "
+		      		<< "baseline: " << mean_v[i] << " ... " << " ... adc above: " << value << " T=" << i << std::endl;
+		}
 
-	//
-	// Found a new pulse ... try to get a few samples prior to this
-	//
 
-	pulse_tail_threshold  = tail_threshold;
-	pulse_start_baseline  = mean_v[i];
+		//
+		// Found a new pulse ... try to get a few samples prior to this
+		//
 
-	pulse_end_threshold = 0.;
-	if(sigma_v[i] * _end_nsigma < _end_adc_thres) pulse_end_threshold = _end_adc_thres;
-	else pulse_end_threshold = sigma_v[i] * _end_nsigma;
+		pulse_tail_threshold  = tail_threshold;
+		pulse_start_baseline  = mean_v[i];
 
-	int buffer_num_index = 0;
-	if(_pulse_v.size())
-	  buffer_num_index = (int)i - _pulse_v.back().t_end -1;
-	else
-	  buffer_num_index = std::min(_num_presample,i);
+		pulse_end_threshold = 0.;
+		if(sigma_v[i] * _end_nsigma < _end_adc_thres) pulse_end_threshold = _end_adc_thres;
+		else pulse_end_threshold = sigma_v[i] * _end_nsigma;
 
-	if(buffer_num_index > (int)_num_presample) buffer_num_index = _num_presample;
+		int buffer_num_index = 0;
+		if(_pulse_v.size())
+	  		buffer_num_index = (int)i - _pulse_v.back().t_end -1;
+		else
+	  		buffer_num_index = std::min(_num_presample,i);
 
-	if(buffer_num_index<0) {
-	  std::cerr << "\033[95m[ERROR]\033[00m Logic error! Negative buffer_num_index..." << std::endl;
-	  throw std::exception();
-	}
+		if(buffer_num_index > (int)_num_presample) buffer_num_index = _num_presample;
 
-	_pulse.t_start   = i - buffer_num_index;
-	_pulse.ped_mean  = pulse_start_baseline;
-	_pulse.ped_sigma = sigma_v[i];
+		if(buffer_num_index<0) {
+	  		std::cerr << "\033[95m[ERROR]\033[00m Logic error! Negative buffer_num_index..." << std::endl;
+	  		throw std::exception();
+		}
 
-	for(size_t pre_index=_pulse.t_start; pre_index<i; ++pre_index) {
+		// If there's a pulse, end we where in in_post, end the previous pulse first
+		if(in_post) {
+			// Find were 
+	  		_pulse.t_end = i - buffer_num_index - 1;
 
-	  double pre_adc = wf[pre_index];
-	  if(_positive) pre_adc -= pulse_start_baseline;
-	  else pre_adc = pulse_start_baseline - pre_adc;
+	  		// Register if width is acceptable
+	  		if( (_pulse.t_end - _pulse.t_start) >= _min_width )
+	    		_pulse_v.push_back(_pulse);
 
-	  if(pre_adc > 0.) _pulse.area += pre_adc;
-	}
+	  		_pulse.reset_param();
 
-	if(_verbose)
-	  std::cout << "\033[93mPulse Start\033[00m: "
-		    << "baseline: " << mean_v[i]
-		    << " ... threshold: " << start_threshold
-		    << " ... adc above baseline: " << value
-		    << " ... pre-adc sum: " << _pulse.area
-		    << " T=" << i << std::endl;
+	  		if(_verbose)
+	    		std::cout << "\033[93mPulse End\033[00m: new pulse starts during in_post: "
+		      		<< "baseline: " << mean_v[i] << " ... " << " ... adc above: " << value << " T=" << i << std::endl;
+		}
 
-	fire = true;
-	in_tail = false;
-	in_post = false;
-      }
+		_pulse.t_start   = i - buffer_num_index;
+		_pulse.ped_mean  = pulse_start_baseline;
+		_pulse.ped_sigma = sigma_v[i];
 
-      if( fire && value < pulse_tail_threshold ) {
-	fire = false;
-	in_tail = true;
-	in_post = false;
-      }
+		for(size_t pre_index=_pulse.t_start; pre_index<i; ++pre_index) {
 
-      if( (fire || in_tail || in_post) && _verbose ) {
-	std::cout << (fire ? "\033[93mPulsing\033[00m: " : "\033[93mIn-tail\033[00m: ")
+	  		double pre_adc = wf[pre_index];
+	  		if(_positive) pre_adc -= pulse_start_baseline;
+	  		else pre_adc = pulse_start_baseline - pre_adc;
+
+	  		if(pre_adc > 0.) _pulse.area += pre_adc;
+		}
+
+		if(_verbose)
+	  		std::cout << "\033[93mPulse Start\033[00m: "
+		    	<< "baseline: " << mean_v[i]
+		    	<< " ... threshold: " << start_threshold
+		    	<< " ... adc above baseline: " << value
+		    	<< " ... pre-adc sum: " << _pulse.area
+		    	<< " T=" << i << std::endl;
+
+		fire = true;
+		in_tail = false;
+		in_post = false;
+    }
+
+    if( fire && value < pulse_tail_threshold ) {
+		fire = false;
+		in_tail = true;
+		in_post = false;
+    }
+
+    if( (fire || in_tail || in_post) && _verbose ) {
+	 	std::cout << (fire ? "\033[93mPulsing\033[00m: " : "\033[93mIn-tail\033[00m: ")
 		  << "baseline: " << mean_v[i]
 		  << " std: " << sigma_v[i]
 		  << " ... adc above baseline " << value
 		  << " T=" << i << std::endl;
 
-      }
+    }
 
 
 
-      if( (fire || in_tail) && value < pulse_end_threshold ) {
-	in_post = true;
-	fire = in_tail = false;
-	post_integration = _num_postsample;
-      }
+    if( (fire || in_tail) && value < pulse_end_threshold ) {
+		in_post = true;
+		fire = in_tail = false;
+		post_integration = _num_postsample;
+    }
 
 
-      if( in_post && post_integration<1 ) {
-	// Found the end of a pulse
-	_pulse.t_end = i - 1;
+    if( in_post && post_integration<1 ) {
+		// Found the end of a pulse
+		_pulse.t_end = i - 1;
 
-	// Register if width is acceptable
-	if( (_pulse.t_end - _pulse.t_start) >= _min_width )
-	  _pulse_v.push_back(_pulse);
+		// Register if width is acceptable
+		if( (_pulse.t_end - _pulse.t_start) >= _min_width )
+	  		_pulse_v.push_back(_pulse);
 
-	if(_verbose)
-	  std::cout << "\033[93mPulse End\033[00m: "
+		if(_verbose)
+	  		std::cout << "\033[93mPulse End\033[00m: "
 		    << "baseline: " << mean_v[i] << " ... adc: " << value << " T=" << i << " ... area sum " << _pulse.area << std::endl;
 
-	_pulse.reset_param();
+		_pulse.reset_param();
 
-	fire = false;
-	in_tail = false;
-	in_post = false;
-      }
+		fire = false;
+		in_tail = false;
+		in_post = false;
+    }
       
-      if(fire || in_tail || in_post){
+    if(fire || in_tail || in_post){
 
-	//_pulse.area += ((double)value - (double)mean_v[i]);
-	_pulse.area += value;
+		//_pulse.area += ((double)value - (double)mean_v[i]);
+		_pulse.area += value;
 
-	if(_pulse.peak < value) {
+		if(_pulse.peak < value) {
 
-	  // Found a new maximum
-	  _pulse.peak = value;
+	  	// Found a new maximum
+	  	_pulse.peak = value;
 
-	  _pulse.t_max = i;
+	  	_pulse.t_max = i;
 
-	}
+		}
 
 	if(in_post) --post_integration;
 
-      }
+    }
 
     }
 
@@ -246,6 +263,11 @@ namespace pmtana{
       _pulse.reset_param();
 
     }
+
+    // for (auto p : _pulse_v) {
+    //   // std::cout << "Pluse t_max " << p.t_max << std::endl;
+    //   std::cout << p.t_start << "," << p.t_end << "," << p.t_max << std::endl;
+    // }
 
     return true;
 

@@ -54,6 +54,7 @@ namespace pmtana
 
     size_t _sample_size;  ///< How many samples are used to calculate local rms and mean
     double _threshold;    ///< Threshold applied to local rms to claim a pulse
+    bool _use_undershoot; ///< If true, uses the highest undershoot to anchor the pedestal
 
     float _max_sigma;     ///< Max sigma to consider adc as 'sane'
     float _ped_range_max; ///< Max value of adc to consider adc as 'sane'

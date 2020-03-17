@@ -33,6 +33,7 @@ namespace pmtana{
     _sample_size     = pset.get<size_t>("SampleSize",       7    );
     _threshold       = pset.get<double>("Threshold",        0.6  );
     _max_sigma       = pset.get<float> ("MaxSigma",         0.5  );
+    _use_undershoot  = pset.get<bool>  ("UseUnderShoot",    false);
     _ped_range_max   = pset.get<float> ("PedRangeMax",      2150 );
     _ped_range_min   = pset.get<float> ("PedRangeMin",      100  );
     _num_presample   = pset.get<int>   ("NumPreSample",     0    );
@@ -138,24 +139,69 @@ namespace pmtana{
     std::vector<double> local_mean_v(wf.size(),-1.);
     std::vector<double> local_sigma_v(wf.size(),-1.);
 
+    bool first_undershoot = true;
+    bool during_undershoot = false;
+
     for (size_t i = 0; i < wf.size() - _sample_size; i++) {
 
       local_mean = mean(wf, i, _sample_size);
       local_rms  = std(wf, local_mean, i, _sample_size);
 
       if(_verbose) std::cout << "\033[93mPedAlgoRmsSlider\033[00m: i " << i 
-			     << "  local_mean: " << local_mean 
-			     << "  local_rms: " << local_rms << std::endl;
+           << "  local_mean: " << local_mean 
+           << "  local_rms: " << local_rms << std::endl;
 
-      if (local_rms < _threshold) {
+      // If we are above the maximum allowed for the
+      // pedestal, we are probably in an undershoot region
+      // Check that we are at a maximum point
+      if (wf[i] > _ped_range_max 
+        && wf[i] > wf[i-2]
+        && wf[i] > wf[i-1] 
+        && wf[i] > wf[i+1]
+        && wf[i] > wf[i+2]
+        && first_undershoot
+        && _use_undershoot) {
 
-	local_mean_v[i] = local_mean;
-	local_sigma_v[i] = local_rms;
+        if(_verbose) std::cout << "\033[93mStarting overshooting\033[00m: "
+                  << "at i " << i
+                  << std::endl;
+
+        during_undershoot = true;
+        first_undershoot = false;
+
+        // Consider this as 'good' pedestal,
+        // so it will interpolate from here
+        local_mean_v[i] = wf[i];
+        local_sigma_v[i] = local_rms;
+
+      } 
+
+      if (during_undershoot && wf[i] <= _ped_range_max) {
+        // Check that it stays on baseline for 10 ticks
+        bool stop = true;
+        for (size_t j = 1; j <= 10; j++) {
+          if (wf[i+j] > _ped_range_max || wf[i+j] < _ped_range_min) 
+            stop = false;
+        } 
+
+        if (stop) {
+          if(_verbose) std::cout << "\033[93mStopping overshooting\033[00m: "
+                    << "at i " << i
+                    << std::endl;
+          during_undershoot = false;
+          local_mean_v[i] = local_mean;
+          local_sigma_v[i] = local_rms;
+        }
+      }
+
+      if (local_rms < _threshold && !during_undershoot) {
+
+        local_mean_v[i] = local_mean;
+        local_sigma_v[i] = local_rms;
 
         if(_verbose)
           std::cout << "\033[93mBelow threshold\033[00m: "
                     << "at i " << i
-                    << " last good index was: " << last_good_index
                     << std::endl;
 
       }
@@ -166,24 +212,30 @@ namespace pmtana{
     std::vector<bool> ped_interapolated(wf.size(),false);
     for(size_t i=0; i < wf.size() - _sample_size; i++) {
 
-      if(local_mean_v[i] > -0.1) {
-	// good pedestal!
+
+      if(local_mean_v[i] != -1) {
 
         if( ( last_good_index + 1 ) < (int)i ) {
-	  // finished the gap. try interpolation
-	  // 0) find where to start/end interpolation
-	  int start_tick  = last_good_index;
-	  int end_tick    = i;
-	  int start_bound = std::max(last_good_index - _num_presample, 0);
-	  int end_bound   = std::min(i + _num_postsample, (int)(wf.size()) - _sample_size);
-	  for(int j=start_tick; j>=start_bound; --j) {
-	    if(local_mean_v[j] < 0) continue;
-	    start_tick = j;
-	  }
-	  for(int j=end_tick; j<=end_bound; ++j) {
-	    if(local_mean_v[j] < 0) continue;
-	    end_tick = j;
-	  }
+          // finished the gap. try interpolation
+          // 0) find where to start/end interpolation
+          if(_verbose)
+            std::cout << "\033[93mGoing to interpolate\033[00m: "
+                      << "between " << last_good_index
+                      << " and: " << i
+                      << std::endl;
+
+          int start_tick  = last_good_index;
+          int end_tick    = i;
+          int start_bound = std::max(last_good_index - _num_presample, 0);
+          int end_bound   = std::min(i + _num_postsample, (int)(wf.size()) - _sample_size);
+          for(int j=start_tick; j>=start_bound; --j) {
+            if(local_mean_v[j] < 0) continue;
+            start_tick = j;
+          }
+          for(int j=end_tick; j<=end_bound; ++j) {
+            if(local_mean_v[j] < 0) continue;
+            end_tick = j;
+          }
 
           //this should become generic interpolation function, for now lets leave.
           float slope = (local_mean_v[end_tick] - local_mean_v[start_tick]) / (float(end_tick - start_tick));
@@ -196,8 +248,7 @@ namespace pmtana{
             sigma_v[j] = (local_sigma_v[end_tick] != 0 ? local_sigma_v[end_tick] : local_sigma_v[start_tick]); // todo: fluctuate baseline
             ped_interapolated[j] = true;
           }
-	}
-
+        }
         last_good_index = i;
       }
     }
